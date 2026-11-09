@@ -8,7 +8,7 @@
 - `GET /api/me`: authenticated account/profile.
 - `GET /api/tasks`: active tasks from the database.
 - `GET /api/wallet`: pending/available ledger totals and recent entries.
-- `POST /api/withdrawals`: intentionally returns 503 until payout approval and testing.
+- `POST /api/withdrawals`: intentionally returns 503 until payout approval and testing.\n- `GET /api/admin/users`: protected user listing.\n- `GET /api/admin/withdrawals`: protected queue of requested/reviewing withdrawals.\n- `POST /api/admin/withdrawals/:id/review`: moves a request from requested to reviewing; it cannot mark a request as paid.\n- `POST /api/admin/tasks`: creates an inactive task record; publishing remains a separate controlled step.
 
 All account-specific routes require `Authorization: Bearer <access_token>`.
 
@@ -20,7 +20,7 @@ Copy `backend/.env.example` to a private environment configuration and set:
 - `SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `PORT` (optional)
-- `ALLOWED_ORIGINS` (optional comma-separated exact origins)
+- `ALLOWED_ORIGINS` (optional comma-separated exact origins)\n- `ADMIN_USER_IDS` (comma-separated Supabase Auth user UUIDs permitted to call admin routes)
 
 Never put the service-role key in the Android app, public Git, or a client-side build.
 
@@ -28,7 +28,7 @@ Never put the service-role key in the Android app, public Git, or a client-side 
 
 Apply `database/migrations/001_initial_schema.sql` to the intended Supabase project. The migration creates profiles, provider task catalogue, an append-only wallet ledger, a balance view, and withdrawal request storage. It does not create fake tasks, credit money, or enable withdrawals.
 
-Configure Supabase Auth email confirmation and production password/security policies before public launch.
+Configure Supabase Auth email confirmation and production password/security policies before public launch. Add only trusted administrator UUIDs to `ADMIN_USER_IDS`; never expose the service-role key.
 
 ## Important launch gates
 
