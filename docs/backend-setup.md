@@ -35,3 +35,7 @@ Configure Supabase Auth email confirmation and production password/security poli
 The API currently has no approved offer provider or payout integration. Task catalogue rows must only be populated from a provider contract that permits cash incentives in Egypt. Do not manually insert tasks that imply guaranteed payment.
 
 Wallet writes must remain server-side. Provider callbacks need the exact signature-validation algorithm documented by the selected provider, idempotency handling, reversal handling, and reconciliation before any real reward is credited. Withdrawal creation and payment execution remain disabled until a real payout method has been approved and tested.
+
+## Deploying the API on Vercel
+
+The API includes a Vercel Node.js catch-all function at `backend/api/[...path].js`. When creating or configuring the Vercel project for this API, set **Root Directory** to `backend` and leave the root directory setting enabled for this project. The deployed health endpoint is `/api/health`; the standalone local server also supports `/health`. Add the Supabase environment variables in Vercel Project Settings → Environment Variables for the environments you intend to test. Never paste the service-role key into GitHub or the Android app.
