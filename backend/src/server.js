@@ -258,7 +258,7 @@ async function handle(req, res) {
     return send(res, 201, { ok: true, task: data, message: "تم إنشاء المهمة كغير نشطة. لا تنشرها قبل التأكد من موافقة المزود." });
   }
 
-  if (req.method === "POST" && /^\\/api\\/admin\\/withdrawals\\/[0-9a-f-]+\\/review$/i.test(path)) {
+  if (req.method === "POST" && /^\/api\/admin\/withdrawals\/[0-9a-f-]+\/review$/i.test(path)) {
     const admin = await requireAdmin(req, res);
     if (!admin) return;
     const id = path.split("/")[4];
