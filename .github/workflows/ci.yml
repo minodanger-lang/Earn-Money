@@ -30,6 +30,9 @@ jobs:
       - name: Check backend JavaScript syntax
         working-directory: backend
         run: npm run check
+      - name: Run backend smoke tests
+        working-directory: backend
+        run: npm test
 
   android-build:
     name: Android debug build
