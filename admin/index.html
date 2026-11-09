@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Earn Money | لوحة الإدارة</title>
+  <style>
+    :root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#17352d;background:#f4f7f5}
+    *{box-sizing:border-box}body{margin:0;padding:24px}.wrap{max-width:1100px;margin:auto}
+    header,.panel{background:#fff;border:1px solid #e0e9e4;border-radius:18px;padding:20px;margin-bottom:16px}
+    h1,h2{margin:0 0 12px}p{color:#587067;line-height:1.7}.muted{font-size:13px;color:#6c8178}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+    label{display:block;font-size:14px;margin:10px 0 5px}input,textarea{width:100%;padding:12px;border:1px solid #cbd9d1;border-radius:10px;font:inherit;background:#fff}
+    button{border:0;border-radius:10px;padding:11px 16px;background:#176b55;color:#fff;font:inherit;font-weight:600;cursor:pointer;margin-top:12px}
+    button.secondary{background:#e6efea;color:#17513f}button:disabled{opacity:.5;cursor:not-allowed}
+    .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.row>*{flex:1}
+    .status{padding:10px;border-radius:10px;background:#eef4f0;margin:12px 0;white-space:pre-wrap}
+    .danger{background:#fff4e5;color:#81511a}.hidden{display:none}
+    .item{border-top:1px solid #e8efeb;padding:12px 0}.item:first-child{border-top:0}
+    .tag{font-size:12px;color:#176b55;background:#e9f4ee;padding:4px 8px;border-radius:20px}
+    @media(max-width:600px){body{padding:12px}.panel,header{padding:15px}}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Earn Money — لوحة الإدارة</h1>
+    <p>إدارة حسابات ومراجعة طلبات السحب وإضافة سجلات مهام غير نشطة. لا توجد وظيفة لصرف الأموال من هذه اللوحة.</p>
+    <div class="status danger">تنبيه: لا تضع مفاتيح Supabase السرية هنا. هذه اللوحة تستخدم جلسة المستخدم فقط، ويجب إدراج UUID المسؤول في ADMIN_USER_IDS على الخادم.</div>
+  </header>
+
+  <section class="panel" id="loginPanel">
+    <h2>اتصال وتسجيل دخول المسؤول</h2>
+    <label for="apiBase">عنوان API</label>
+    <input id="apiBase" type="url" value="http://localhost:3000" autocomplete="url">
+    <div class="grid">
+      <div><label for="email">البريد الإلكتروني</label><input id="email" type="email" autocomplete="username"></div>
+      <div><label for="password">كلمة المرور</label><input id="password" type="password" autocomplete="current-password"></div>
+    </div>
+    <button id="loginBtn">تسجيل الدخول</button>
+    <div id="loginStatus" class="status" role="status">أدخل عنوان الخادم وبيانات حساب المسؤول.</div>
+  </section>
+
+  <main id="dashboard" class="hidden">
+    <section class="panel">
+      <div class="row"><div><h2>نظرة عامة</h2><p id="adminIdentity" class="muted"></p></div><button id="logoutBtn" class="secondary">تسجيل الخروج</button></div>
+      <div id="mainStatus" class="status" role="status">متصل.</div>
+      <div class="grid">
+        <div><h2 id="usersCount">—</h2><p>حسابات في أحدث 100 سجل</p></div>
+        <div><h2 id="withdrawalsCount">—</h2><p>طلبات تنتظر المراجعة</p></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="row"><h2>طلبات السحب</h2><button id="refreshBtn" class="secondary">تحديث البيانات</button></div>
+      <p class="muted">يمكن نقل الطلب إلى حالة «قيد المراجعة» فقط. لا يمكن اعتماد الدفع أو تسجيله من هذه النسخة.</p>
+      <div id="withdrawalsList"></div>
+    </section>
+
+    <section class="panel">
+      <h2>المستخدمون</h2><div id="usersList"></div>
+    </section>
+
+    <section class="panel">
+      <h2>إضافة مهمة من مزود</h2>
+      <p class="muted">تُحفظ المهمة غير نشطة دائمًا. لا تفعّلها قبل موافقة المزود والتحقق من توفرها وشروط المكافآت في مصر.</p>
+      <div class="grid">
+        <div><label for="provider">اسم المزود</label><input id="provider" maxlength="60" placeholder="provider-name"></div>
+        <div><label for="providerTaskId">معرّف المهمة لدى المزود</label><input id="providerTaskId" maxlength="120"></div>
+      </div>
+      <label for="taskTitle">عنوان المهمة</label><input id="taskTitle" maxlength="120">
+      <label for="taskDescription">الوصف</label><textarea id="taskDescription" maxlength="1000" rows="3"></textarea>
+      <label for="taskCategory">التصنيف</label><input id="taskCategory" maxlength="60" value="general">
+      <label for="termsUrl">رابط الشروط (اختياري)</label><input id="termsUrl" type="url">
+      <button id="createTaskBtn">حفظ كمهمة غير نشطة</button>
+    </section>
+  </main>
+</div>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  let accessToken = "";
+  let currentUser = null;
+  const api = () => $("apiBase").value.trim().replace(/\/$/, "");
+  const headers = () => ({ "Content-Type": "application/json", Authorization: "Bearer " + accessToken });
+  const status = (id, message, danger = false) => {
+    $(id).textContent = message;
+    $(id).classList.toggle("danger", danger);
+  };
+  async function request(path, options = {}) {
+    const response = await fetch(api() + path, options);
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.message || body.error || "تعذر تنفيذ الطلب");
+    return body;
+  }
+  async function loadDashboard() {
+    const [users, withdrawals] = await Promise.all([
+      request("/api/admin/users", { headers: headers() }),
+      request("/api/admin/withdrawals", { headers: headers() })
+    ]);
+    $("usersCount").textContent = users.users.length;
+    $("withdrawalsCount").textContent = withdrawals.withdrawals.length;
+    $("usersList").replaceChildren();
+    users.users.forEach((user) => {
+      const item = document.createElement("div"); item.className = "item";
+      const name = document.createElement("strong"); name.textContent = user.display_name || "مستخدم";
+      const detail = document.createElement("div"); detail.className = "muted"; detail.textContent = user.id + " · " + new Date(user.created_at).toLocaleDateString("ar-EG");
+      item.append(name, detail); $("usersList").append(item);
+    });
+    $("withdrawalsList").replaceChildren();
+    if (!withdrawals.withdrawals.length) $("withdrawalsList").textContent = "لا توجد طلبات تنتظر المراجعة.";
+    withdrawals.withdrawals.forEach((entry) => {
+      const item = document.createElement("div"); item.className = "item";
+      const title = document.createElement("strong"); title.textContent = Number(entry.amount).toFixed(2) + " " + entry.currency + " — " + entry.payout_method;
+      const detail = document.createElement("div"); detail.className = "muted"; detail.textContent = "المستخدم: " + entry.user_id + " · الحالة: " + entry.status;
+      item.append(title, detail);
+      if (entry.status === "requested") {
+        const button = document.createElement("button"); button.className = "secondary"; button.textContent = "استلام للمراجعة";
+        button.addEventListener("click", async () => {
+          button.disabled = true;
+          try { await request("/api/admin/withdrawals/" + encodeURIComponent(entry.id) + "/review", { method: "POST", headers: headers() }); await loadDashboard(); }
+          catch (error) { status("mainStatus", error.message, true); button.disabled = false; }
+        });
+        item.append(button);
+      }
+      $("withdrawalsList").append(item);
+    });
+    status("mainStatus", "تم تحديث بيانات لوحة الإدارة.");
+  }
+  $("loginBtn").addEventListener("click", async () => {
+    $("loginBtn").disabled = true;
+    try {
+      const result = await request("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: $("email").value, password: $("password").value })
+      });
+      accessToken = result.session?.accessToken || "";
+      currentUser = result.user;
+      if (!accessToken) throw new Error("لم يرجع الخادم جلسة دخول. تحقق من تأكيد البريد.");
+      $("adminIdentity").textContent = currentUser.email || currentUser.id;
+      await loadDashboard();
+      $("loginPanel").classList.add("hidden"); $("dashboard").classList.remove("hidden");
+    } catch (error) { status("loginStatus", error.message, true); }
+    finally { $("loginBtn").disabled = false; }
+  });
+  $("logoutBtn").addEventListener("click", () => {
+    accessToken = ""; currentUser = null;
+    $("dashboard").classList.add("hidden"); $("loginPanel").classList.remove("hidden");
+    $("password").value = ""; status("loginStatus", "تم تسجيل الخروج.");
+  });
+  $("refreshBtn").addEventListener("click", async () => {
+    try { await loadDashboard(); } catch (error) { status("mainStatus", error.message, true); }
+  });
+  $("createTaskBtn").addEventListener("click", async () => {
+    $("createTaskBtn").disabled = true;
+    try {
+      const result = await request("/api/admin/tasks", {
+        method: "POST", headers: headers(),
+        body: JSON.stringify({
+          provider: $("provider").value, providerTaskId: $("providerTaskId").value,
+          title: $("taskTitle").value, description: $("taskDescription").value,
+          category: $("taskCategory").value, termsUrl: $("termsUrl").value
+        })
+      });
+      status("mainStatus", result.message || "تم حفظ المهمة غير النشطة.");
+      ["provider","providerTaskId","taskTitle","taskDescription","termsUrl"].forEach((id) => $(id).value = "");
+    } catch (error) { status("mainStatus", error.message, true); }
+    finally { $("createTaskBtn").disabled = false; }
+  });
+})();
+</script>
+</body>
+</html>
