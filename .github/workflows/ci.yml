@@ -24,8 +24,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm install --ignore-scripts --no-audit --no-fund
       - name: Check backend JavaScript syntax
-        run: node --check backend/src/server.js
+        working-directory: backend
+        run: npm run check
 
   android-build:
     name: Android debug build
