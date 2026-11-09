@@ -107,7 +107,7 @@ async function handle(req, res) {
   const url = new URL(req.url || "/", "http://localhost");
   const path = url.pathname;
 
-  if (req.method === "GET" && path === "/health") {
+  if (req.method === "GET" && (path === "/health" || path === "/api/health")) {
     return send(res, 200, {
       ok: true,
       service: "earn-money-api",
@@ -283,7 +283,7 @@ async function handle(req, res) {
   return send(res, 404, { ok: false, error: "NOT_FOUND" });
 }
 
-const server = createServer((req, res) => {
+export function handler(req, res) {
   handle(req, res).catch((error) => {
     const status = Number.isInteger(error.status) ? error.status : 500;
     send(res, status, {
@@ -291,8 +291,13 @@ const server = createServer((req, res) => {
       error: status === 500 ? "INTERNAL_SERVER_ERROR" : error.message
     });
   });
-});
+}
 
-server.listen(port, "0.0.0.0", () => {
-  console.log(`Earn Money API listening on port ${port}`);
-});
+export default handler;
+
+// Vercel invokes the exported handler; local development uses the standalone HTTP server.
+if (!process.env.VERCEL) {
+  createServer(handler).listen(port, "0.0.0.0", () => {
+    console.log(`Earn Money API listening on port ${port}`);
+  });
+}
