@@ -88,6 +88,17 @@ async function requireUser(req, res) {
   return data.user;
 }
 
+async function requireAdmin(req, res) {
+  const user = await requireUser(req, res);
+  if (!user) return null;
+  const adminIds = (process.env.ADMIN_USER_IDS || "").split(",").map((value) => value.trim()).filter(Boolean);
+  if (!adminIds.includes(user.id)) {
+    send(res, 403, { ok: false, error: "FORBIDDEN" });
+    return null;
+  }
+  return user;
+}
+
 async function handle(req, res) {
   applyCors(req, res);
   if (req.method === "OPTIONS") return send(res, 204, {});
@@ -199,6 +210,66 @@ async function handle(req, res) {
       },
       transactions: transactions || []
     });
+  }
+
+  if (req.method === "GET" && path === "/api/admin/withdrawals") {
+    const admin = await requireAdmin(req, res);
+    if (!admin) return;
+    const { data, error } = await adminClient
+      .from("withdrawal_requests")
+      .select("id, user_id, amount, currency, payout_method, status, created_at")
+      .in("status", ["requested", "reviewing"])
+      .order("created_at", { ascending: true })
+      .limit(100);
+    if (error) return send(res, 500, { ok: false, error: "WITHDRAWALS_READ_FAILED" });
+    return send(res, 200, { ok: true, withdrawals: data || [] });
+  }
+
+  if (req.method === "GET" && path === "/api/admin/users") {
+    const admin = await requireAdmin(req, res);
+    if (!admin) return;
+    const { data, error } = await adminClient
+      .from("profiles")
+      .select("id, display_name, created_at")
+      .order("created_at", { ascending: false })
+      .limit(100);
+    if (error) return send(res, 500, { ok: false, error: "USERS_READ_FAILED" });
+    return send(res, 200, { ok: true, users: data || [] });
+  }
+
+  if (req.method === "POST" && path === "/api/admin/tasks") {
+    const admin = await requireAdmin(req, res);
+    if (!admin) return;
+    const body = await readJson(req);
+    const provider = typeof body.provider === "string" ? body.provider.trim().slice(0, 60) : "";
+    const providerTaskId = typeof body.providerTaskId === "string" ? body.providerTaskId.trim().slice(0, 120) : "";
+    const title = typeof body.title === "string" ? body.title.trim().slice(0, 120) : "";
+    const description = typeof body.description === "string" ? body.description.trim().slice(0, 1000) : "";
+    const category = typeof body.category === "string" ? body.category.trim().slice(0, 60) : "general";
+    const termsUrl = typeof body.termsUrl === "string" ? body.termsUrl.trim().slice(0, 500) : null;
+    if (!provider || !providerTaskId || !title) {
+      return send(res, 400, { ok: false, error: "INVALID_TASK" });
+    }
+    const { data, error } = await adminClient.from("tasks").insert({
+      provider, provider_task_id: providerTaskId, title, description,
+      category, terms_url: termsUrl || null, is_active: false
+    }).select("id, provider, provider_task_id, title, is_active").single();
+    if (error) return send(res, 400, { ok: false, error: "TASK_CREATE_FAILED" });
+    return send(res, 201, { ok: true, task: data, message: "تم إنشاء المهمة كغير نشطة. لا تنشرها قبل التأكد من موافقة المزود." });
+  }
+
+  if (req.method === "POST" && /^\\/api\\/admin\\/withdrawals\\/[0-9a-f-]+\\/review$/i.test(path)) {
+    const admin = await requireAdmin(req, res);
+    if (!admin) return;
+    const id = path.split("/")[4];
+    const { data, error } = await adminClient
+      .from("withdrawal_requests")
+      .update({ status: "reviewing", updated_at: new Date().toISOString() })
+      .eq("id", id).eq("status", "requested")
+      .select("id, status").maybeSingle();
+    if (error) return send(res, 500, { ok: false, error: "WITHDRAWAL_REVIEW_FAILED" });
+    if (!data) return send(res, 409, { ok: false, error: "WITHDRAWAL_NOT_PENDING" });
+    return send(res, 200, { ok: true, withdrawal: data });
   }
 
   if (req.method === "POST" && path === "/api/withdrawals") {
