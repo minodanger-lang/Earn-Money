@@ -30,6 +30,11 @@ try {
   assert.equal(health.service, "earn-money-api");
   assert.equal(health.databaseConfigured, false);
 
+  const vercelHealthResponse = await fetch(`${baseUrl}/api/health`);
+  const vercelHealth = await vercelHealthResponse.json();
+  assert.equal(vercelHealthResponse.status, 200);
+  assert.equal(vercelHealth.ok, true, "Vercel function health route should respond");
+
   const protectedResponse = await fetch(`${baseUrl}/api/auth/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
