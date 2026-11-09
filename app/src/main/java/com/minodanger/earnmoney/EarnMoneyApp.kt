@@ -19,17 +19,22 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 
@@ -208,20 +213,159 @@ private fun WalletScreen(modifier: Modifier = Modifier) {
     }
 }
 
+private const val AUTH_API_BASE_URL = "https://earn-money-git-setup-initial-foundation-earn-money3.vercel.app"
+private val authExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
+
 @Composable
 private fun AccountScreen(modifier: Modifier = Modifier) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val preferences = remember { context.getSharedPreferences("earn_money_auth", android.content.Context.MODE_PRIVATE) }
+    var displayName by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf(preferences.getString("email", "") ?: "") }
+    var password by remember { mutableStateOf("") }
+    var isRegister by remember { mutableStateOf(true) }
+    var isLoading by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf("") }
+    var signedInEmail by remember { mutableStateOf(
+        if (preferences.getString("access_token", null) != null) preferences.getString("email", null) else null
+    ) }
+
     Column(
         modifier = modifier.fillMaxSize().padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text("حسابي", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp)) {
-                Text("زائر تجريبي", fontWeight = FontWeight.Bold)
-                Text("تسجيل الحسابات لم يتم ربطه بالخادم بعد.")
+        if (signedInEmail != null) {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("تم تسجيل الدخول", fontWeight = FontWeight.Bold)
+                    Text(signedInEmail ?: "")
+                    Button(onClick = {
+                        preferences.edit().clear().apply()
+                        signedInEmail = null
+                        password = ""
+                        message = "تم تسجيل الخروج."
+                    }) { Text("تسجيل الخروج") }
+                }
+            }
+        } else {
+            Text(
+                if (isRegister) "إنشاء حساب جديد" else "تسجيل الدخول",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+            if (isRegister) {
+                OutlinedTextField(
+                    value = displayName,
+                    onValueChange = { displayName = it },
+                    label = { Text("الاسم") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+            OutlinedTextField(
+                value = email,
+                onValueChange = { email = it },
+                label = { Text("البريد الإلكتروني") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = password,
+                onValueChange = { password = it },
+                label = { Text("كلمة المرور (8 أحرف على الأقل)") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                modifier = Modifier.fillMaxWidth()
+            )
+            Button(
+                enabled = !isLoading,
+                modifier = Modifier.fillMaxWidth(),
+                onClick = {
+                    val cleanEmail = email.trim()
+                    if (cleanEmail.isBlank() || !cleanEmail.contains("@")) {
+                        message = "اكتب بريدًا إلكترونيًا صحيحًا."
+                    } else if (password.length < 8) {
+                        message = "كلمة المرور يجب ألا تقل عن 8 أحرف."
+                    } else if (isRegister && displayName.isBlank()) {
+                        message = "اكتب اسمك."
+                    } else {
+                        isLoading = true
+                        message = "جارٍ الاتصال..."
+                        authExecutor.execute {
+                            var resultMessage = "تعذر الاتصال بالخادم. حاول مرة أخرى."
+                            var token: String? = null
+                            try {
+                                val connection = java.net.URL(
+                                    "$AUTH_API_BASE_URL/api/auth/${if (isRegister) "register" else "login"}"
+                                ).openConnection() as java.net.HttpURLConnection
+                                connection.requestMethod = "POST"
+                                connection.connectTimeout = 15000
+                                connection.readTimeout = 20000
+                                connection.doOutput = true
+                                connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                                val body = org.json.JSONObject()
+                                    .put("email", cleanEmail)
+                                    .put("password", password)
+                                if (isRegister) body.put("displayName", displayName.trim())
+                                connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+                                val code = connection.responseCode
+                                val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+                                val responseText = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                                val response = org.json.JSONObject(responseText.ifBlank { "{}" })
+                                if (code in 200..299) {
+                                    resultMessage = response.optString("message", "تمت العملية بنجاح.")
+                                    val session = response.optJSONObject("session")
+                                    token = session?.optString("accessToken")?.takeIf { !it.isNullOrBlank() }
+                                    if (token != null) {
+                                        preferences.edit()
+                                            .putString("access_token", token)
+                                            .putString("refresh_token", session?.optString("refreshToken"))
+                                            .putString("email", cleanEmail)
+                                            .apply()
+                                    }
+                                } else {
+                                    resultMessage = response.optString("message", "تعذر إتمام العملية. راجع البيانات وحاول مرة أخرى.")
+                                }
+                                connection.disconnect()
+                            } catch (_: Exception) {
+                                resultMessage = "تعذر الاتصال بالخادم. تأكد من الإنترنت وحاول مرة أخرى."
+                            }
+                            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                isLoading = false
+                                message = resultMessage
+                                if (token != null) signedInEmail = cleanEmail
+                                if (isRegister && token == null && resultMessage.contains("تحقق من بريدك")) {
+                                    isRegister = false
+                                }
+                            }
+                        }
+                    }
+                }
+            ) {
+                Text(if (isLoading) "يرجى الانتظار..." else if (isRegister) "إنشاء الحساب" else "تسجيل الدخول")
+            }
+            Button(
+                enabled = !isLoading,
+                modifier = Modifier.fillMaxWidth(),
+                onClick = {
+                    isRegister = !isRegister
+                    message = ""
+                }
+            ) {
+                Text(if (isRegister) "لدي حساب بالفعل — تسجيل الدخول" else "ليس لدي حساب — إنشاء حساب")
             }
         }
-        Text("سيتم إضافة التسجيل وتسجيل الدخول والتحقق من الحساب في المرحلة التالية.")
+        if (message.isNotBlank()) {
+            Text(message, color = MaterialTheme.colorScheme.primary)
+        }
+        Text(
+            "يتطلب إنشاء الحساب بريدًا إلكترونيًا صالحًا. إذا طُلب تأكيد البريد، افتح رسالة التأكيد أولًا ثم سجّل الدخول.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
