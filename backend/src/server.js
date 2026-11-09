@@ -130,7 +130,20 @@ async function handle(req, res) {
       password,
       options: { data: { display_name: displayName } }
     });
-    if (error) return send(res, 400, { ok: false, error: "REGISTRATION_FAILED", message: "تعذر إنشاء الحساب. تحقق من البيانات أو إعدادات تأكيد البريد." });
+    if (error) {
+      // Return Supabase's safe Auth error text so the client can distinguish
+      // duplicate email, email delivery/configuration, password, and rate-limit failures.
+      const authErrorCode = typeof error.code === "string" ? error.code : "REGISTRATION_FAILED";
+      const authErrorMessage = typeof error.message === "string"
+        ? error.message.slice(0, 240)
+        : "Unknown authentication error";
+      console.warn("Supabase sign-up rejected:", authErrorCode, authErrorMessage);
+      return send(res, 400, {
+        ok: false,
+        error: authErrorCode,
+        message: `تعذر إنشاء الحساب: ${authErrorMessage}`
+      });
+    }
     return send(res, 201, {
       ok: true,
       message: data.session ? "تم إنشاء الحساب." : "تم إنشاء الحساب. تحقق من بريدك لتأكيده قبل تسجيل الدخول.",
